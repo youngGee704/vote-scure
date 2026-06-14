@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0f1a;--s1:#111827;--s2:#1a2235;--s3:#232f42;
+  --br:#2a3a52;--ac:#00d4a8;--bl:#0099ff;--or:#ff6b35;
+  --tx:#e8edf5;--t2:#8a9bb5;--t3:#5a6b82;
+  --er:#ff4757;--wn:#ffd32a;
+  --fn:'Sora',sans-serif;--mo:'JetBrains Mono',monospace;
+  --rd:14px;--rs:8px;
+  --sh:0 4px 20px rgba(0,0,0,.4);--sl:0 8px 40px rgba(0,0,0,.6);
+  --gl:0 0 20px rgba(0,212,168,.15);
+}
+html,body{min-height:100%;background:var(--bg);color:var(--tx);font-family:var(--fn);-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--s1)}::-webkit-scrollbar-thumb{background:var(--br);border-radius:3px}
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fi{from{opacity:0}to{opacity:1}}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes sp{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes gp{0%,100%{box-shadow:var(--gl)}50%{box-shadow:0 0 36px rgba(0,212,168,.3)}}
+@keyframes si{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+.card{background:var(--s1);border:1px solid var(--br);border-radius:var(--rd);box-shadow:var(--sh)}
+button{cursor:pointer;font-family:var(--fn)}
+input,textarea{font-family:var(--fn)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ── IN-MEMORY DATABASE (simulates Firebase) ──────────────────────────────────
+const DB = {
+  election: { status:"open", totalStudents:500, totalVotes:0 },
+  users: {},         // matricNo → {name,matric,email,hasVoted,receiptId}
+  candidates: [
+    {id:"c1",name:"Endurance SANTU Akumifi",position:"Course Representative",manifesto:"I will bridge the gap between students and lecturers by creating a weekly open-door session. My focus is on early exam timetables, better lab access, and a student welfare fund for those struggling with fees. Vote Endurance for a stronger, more united CMP 300 level.",avatar:"EA",color:"#1a6b4a",votes:0},
+    {id:"c2",name:"Muhammad Yusuf Madaki",position:"Course Representative",manifesto:"Three priorities: transparent communication, a digital notice board for all class updates, and negotiating with faculty for grace periods during personal emergencies. Your voice deserves to be heard. Together we rise — vote Madaki.",avatar:"MM",color:"#1a3d6b",votes:0},
+    {id:"c3",name:"Aisha Yahuza",position:"Course Representative",manifesto:"I bring dedication and a student-first vision. I'll establish a mentorship program pairing finalists with 100-level students, fight for better facilities, and publish monthly rep reports to the class. Aisha Yahuza — your voice, your future.",avatar:"AY",color:"#6b1a4a",votes:0},
+  ],
+  votes: [],  // {receiptId, candidateId, ts} — NO student ID
+};
+
+const ADMIN_PW    = "Madaki123";
+const MATRIC_RE   = /^FT23CMP(0[0-4]\d{2}|0500)$/;
+const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const COLORS      = ["#1a6b4a","#1a3d6b","#6b1a4a","#6b4a1a","#3d6b1a","#1a5d6b"];
+
+const sanitize  = s => String(s).replace(/[<>"'&]/g,"");
+const mkRcpt    = () => "TXN-"+Math.random().toString(36).slice(2,8).toUpperCase()+"-"+Date.now().toString(36).toUpperCase();
+const initials  = n => n.trim().split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+
+// ── APP STATE ─────────────────────────────────────────────────────────────────
+let state = { view:"landing", student:null };
+const render = () => { document.getElementById("app").innerHTML = ""; buildApp(); };
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+const el = (tag,attrs={},children=[]) => {
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k,v])=>{
+    if(k==="style"&&typeof v==="object") Object.assign(e.style,v);
+    else if(k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(),v);
+    else e.setAttribute(k,v);
+  });
+  children.forEach(c=> c!=null && e.appendChild(typeof c==="string"?document.createTextNode(c):c));
+  return e;
+};
+const div  = (s,ch) => { const d=document.createElement("div"); if(s) Object.assign(d.style,s); if(ch) ch.forEach(c=>c!=null&&d.appendChild(typeof c==="string"?document.createTextNode(c):c)); return d; };
+const p    = (text,s) => { const e=document.createElement("p"); e.textContent=text; if(s)Object.assign(e.style,s); return e; };
+const h    = (n,text,s) => { const e=document.createElement("h"+n); e.textContent=text; if(s)Object.assign(e.style,s); return e; };
+const btn  = (text,s,cb) => { const b=document.createElement("button"); b.textContent=text; if(s)Object.assign(b.style,s); if(cb)b.onclick=cb; return b; };
+const inp  = (s,attrs={}) => { const i=document.createElement("input"); if(s)Object.assign(i.style,s); Object.entries(attrs).forEach(([k,v])=>{ if(k==="oninput")i.oninput=v; else if(k==="onkeydown")i.onkeydown=v; else i.setAttribute(k,v); }); return i; };
+const span = (text,s) => { const e=document.createElement("span"); e.textContent=text; if(s)Object.assign(e.style,s); return e; };
+const code = (text,s) => { const e=document.createElement("code"); e.textContent=text; if(s)Object.assign(e.style,s); return e; };
+
+// ── REUSABLE COMPONENTS ────────────────────────────────────────────────────────
+function Dot(on) {
+  return el("span",{style:{display:"inline-block",width:"8px",height:"8px",borderRadius:"50%",background:on?"var(--ac)":"var(--t3)",animation:on?"pu 1.5s ease infinite":"none",boxShadow:on?"0 0 8px var(--ac)":"none"}});
+}
+
+function Tag(text,c="ac") {
+  const m={ac:"rgba(0,212,168,.1)/color:#00d4a8/rgba(0,212,168,.25)",bl:"rgba(0,153,255,.1)/color:#0099ff/rgba(0,153,255,.25)",er:"rgba(255,71,87,.1)/color:#ff4757/rgba(255,71,87,.25)",wn:"rgba(255,211,42,.1)/color:#ffd32a/rgba(255,211,42,.25)"};
+  const parts=(m[c]||m.ac).split("/");
+  return el("span",{style:{display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:"20px",background:parts[0],color:parts[1].replace("color:",""),border:`1px solid ${parts[2]}`,fontSize:"11px",fontWeight:"600",letterSpacing:".05em",textTransform:"uppercase"}},[text]);
+}
+
+function Btn(text,variant,cb,disabled=false) {
+  const V={
+    pr:"background:linear-gradient(135deg,#00d4a8,#0099ff);color:#000;border:none;box-shadow:0 4px 14px rgba(0,212,168,.3)",
+    se:"background:transparent;color:var(--tx);border:1px solid var(--br)",
+    da:"background:linear-gradient(135deg,#ff4757,#ff6b35);color:#fff;border:none",
+    su:"background:linear-gradient(135deg,#00d4a8,#00b894);color:#000;border:none",
+  };
+  const style={padding:"12px 22px",borderRadius:"var(--rs)",fontWeight:"600",fontSize:"14px",transition:"all .2s",letterSpacing:".02em",cursor:disabled?"not-allowed":"pointer",opacity:disabled?"0.45":"1"};
+  const parts=(V[variant||"pr"]||V.pr).split(";").reduce((o,p)=>{const[k,...v]=p.split(":");if(k.trim())o[k.trim().replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=v.join(":").trim();return o;},{});
+  Object.assign(style,parts);
+  const b=document.createElement("button");
+  Object.assign(b.style,style);
+  b.textContent=text; b.disabled=disabled;
+  if(cb)b.onclick=cb;
+  b.onmouseenter=()=>{ if(!disabled) b.style.transform="translateY(-1px)"; };
+  b.onmouseleave=()=>{ b.style.transform="translateY(0)"; };
+  return b;
+}
+
+function mkInput(placeholder,type="text",monospace=false) {
+  const i=document.createElement("input");
+  i.type=type; i.placeholder=placeholder;
+  Object.assign(i.style,{width:"100%",background:"var(--s2)",border:"1px solid var(--br)",borderRadius:"var(--rs)",padding:"12px 14px",color:"var(--tx)",fontSize:"14px",outline:"none",transition:"border-color .2s",fontFamily:monospace?"var(--mo)":"var(--fn)",letterSpacing:monospace?".06em":"normal"});
+  i.onfocus=()=>i.style.borderColor="var(--ac)";
+  i.onblur =()=>i.style.borderColor="var(--br)";
+  return i;
+}
+
+function errBox(msg) {
+  return div({display:"flex",gap:"8px",padding:"11px 14px",background:"rgba(255,71,87,.08)",border:"1px solid rgba(255,71,87,.2)",borderRadius:"var(--rs)",color:"var(--er)",fontSize:"13px",lineHeight:"1.5",animation:"fi .2s ease"},[span("⚠️"),span(msg)]);
+}
+function okBox(msg) {
+  return div({display:"flex",gap:"8px",padding:"11px 14px",background:"rgba(0,212,168,.08)",border:"1px solid rgba(0,212,168,.2)",borderRadius:"var(--rs)",color:"var(--ac)",fontSize:"13px",lineHeight:"1.5",animation:"fi .2s ease"},[span("✅"),span(msg)]);
+}
+
+function mkModal(title, contentFn, onClose) {
+  const overlay = div({position:"fixed",inset:"0",zIndex:"1000",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.72)",backdropFilter:"blur(10px)",animation:"fi .2s ease",padding:"16px"});
+  overlay.onclick = () => { document.body.removeChild(overlay); if(onClose) onClose(); };
+  const box = document.createElement("div");
+  box.className="card";
+  Object.assign(box.style,{padding:"24px",width:"100%",maxWidth:"520px",maxHeight:"90vh",overflowY:"auto",animation:"up .3s ease",boxShadow:"var(--sl)"});
+  box.onclick = e => e.stopPropagation();
+  const header = div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"18px"},[h(3,title,{fontSize:"17px",fontWeight:"700"})]);
+  const closeBtn = btn("✕",{background:"none",border:"none",color:"var(--t3)",fontSize:"20px",cursor:"pointer",lineHeight:"1"},()=>{document.body.removeChild(overlay);if(onClose)onClose();});
+  header.appendChild(closeBtn);
+  box.appendChild(header);
+  contentFn(box, ()=>document.body.contains(overlay)&&document.body.removeChild(overlay));
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+// ── LOGO BLOCK ────────────────────────────────────────────────────────────────
+function makeLogo() {
+  const isOpen=DB.election.status==="open", isClosed=DB.election.status==="closed";
+  const statusColor=isOpen?"rgba(0,212,168,.08)":isClosed?"rgba(255,71,87,.08)":"rgba(255,211,42,.08)";
+  const statusBorder=isOpen?"rgba(0,212,168,.2)":isClosed?"rgba(255,71,87,.2)":"rgba(255,211,42,.2)";
+  const statusText=isOpen?"ELECTION LIVE":isClosed?"ELECTION CLOSED":"ELECTION PENDING";
+  const statusTextColor=isOpen?"var(--ac)":isClosed?"var(--er)":"var(--wn)";
+
+  const wrap = div({textAlign:"center",marginBottom:"30px"});
+  const icon = div({display:"inline-flex",alignItems:"center",justifyContent:"center",width:"68px",height:"68px",borderRadius:"20px",background:"linear-gradient(135deg,rgba(0,212,168,.18),rgba(0,153,255,.18))",border:"1px solid rgba(0,212,168,.3)",fontSize:"32px",marginBottom:"12px",boxShadow:"var(--gl)"},[span("🗳️")]);
+  wrap.appendChild(icon);
+  wrap.appendChild(h(1,"VoteSecure",{fontSize:"24px",fontWeight:"800",letterSpacing:"-.02em",marginBottom:"4px"}));
+  wrap.appendChild(p("300 LEVEL CMP ONLINE VOTING SYSTEM",{color:"var(--t2)",fontSize:"11px",marginBottom:"12px",letterSpacing:".04em"}));
+  const statusBadge = div({display:"inline-flex",alignItems:"center",gap:"7px",padding:"5px 14px",borderRadius:"20px",background:statusColor,border:`1px solid ${statusBorder}`},[Dot(isOpen),span(statusText,{fontSize:"11px",fontWeight:"700",letterSpacing:".06em",color:statusTextColor})]);
+  wrap.appendChild(statusBadge);
+  return wrap;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LANDING PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+function buildLanding() {
+  const root = div({minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 50%,rgba(0,212,168,.06) 0%,transparent 55%),radial-gradient(ellipse at 80% 15%,rgba(0,153,255,.06) 0%,transparent 55%)"});
+  const wrap = div({width:"100%",maxWidth:"450px",animation:"up .5s ease"});
+
+  wrap.appendChild(makeLogo());
+
+  // ── HOME BUTTONS ──────────────────────────────────────────────────────────
+  const homeBtns = div({display:"flex",flexDirection:"column",gap:"11px"});
+  [
+    {p:"signup",ic:"📝",title:"Create Account",sub:"New student? Register with your details",col:"var(--ac)"},
+    {p:"login", ic:"🔐",title:"Student Login",  sub:"Already registered? Log in to vote",   col:"var(--ac)"},
+    {p:"admin", ic:"🛡️",title:"Course Rep Dashboard",sub:"Admin access — password protected",col:"var(--bl)"},
+  ].forEach(b=>{
+    const card = div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"16px 20px",display:"flex",alignItems:"center",gap:"14px",cursor:"pointer",transition:"all .2s",marginBottom:"0"});
+    const ico = div({width:"46px",height:"46px",borderRadius:"12px",background:b.col==="var(--ac)"?"rgba(0,212,168,.1)":"rgba(0,153,255,.1)",border:`1px solid ${b.col==="var(--ac)"?"rgba(0,212,168,.2)":"rgba(0,153,255,.2)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",flexShrink:"0"},[span(b.ic)]);
+    const txt = div({flex:"1"});
+    txt.appendChild(p(b.title,{fontWeight:"700",fontSize:"15px",color:"var(--tx)",marginBottom:"3px"}));
+    txt.appendChild(p(b.sub,{color:"var(--t2)",fontSize:"12px"}));
+    card.appendChild(ico); card.appendChild(txt);
+    card.appendChild(span("›",{color:"var(--t3)",fontSize:"22px"}));
+    card.onmouseenter=()=>{card.style.borderColor=b.col;card.style.background="var(--s2)"};
+    card.onmouseleave=()=>{card.style.borderColor="var(--br)";card.style.background="var(--s1)"};
+    card.onclick=()=>showPage(b.p);
+    homeBtns.appendChild(card);
+  });
+  const noteBx = div({marginTop:"8px",padding:"12px 14px",background:"rgba(0,153,255,.05)",borderRadius:"var(--rs)",border:"1px solid rgba(0,153,255,.12)"});
+  noteBx.innerHTML='<p style="font-size:12px;color:var(--t2);line-height:1.7">🔒 <strong style="color:var(--tx)">Secure &amp; Anonymous</strong> — Your vote is stored in Firebase. Your identity is <em>never</em> linked to your choice.</p>';
+  homeBtns.appendChild(noteBx);
+
+  // ── SIGN UP PAGE ──────────────────────────────────────────────────────────
+  const signupPage = div({display:"none"});
+  signupPage.className="card";
+  Object.assign(signupPage.style,{padding:"24px"});
+
+  const backBtnS = btn("← Back",{background:"none",border:"none",color:"var(--t2)",fontSize:"13px",cursor:"pointer",marginBottom:"20px"},()=>showPage("home"));
+  signupPage.appendChild(backBtnS);
+
+  const spHdr = div({marginBottom:"20px"});
+  spHdr.appendChild(div({display:"inline-flex",alignItems:"center",justifyContent:"center",width:"42px",height:"42px",borderRadius:"11px",background:"rgba(0,212,168,.1)",border:"1px solid rgba(0,212,168,.2)",fontSize:"20px",marginBottom:"10px"},[span("📝")]));
+  spHdr.appendChild(h(2,"Create Your Account",{fontSize:"19px",fontWeight:"800",marginBottom:"5px"}));
+  spHdr.appendChild(p("Register once with your university details. All fields are required.",{color:"var(--t2)",fontSize:"13px",lineHeight:"1.6"}));
+  signupPage.appendChild(spHdr);
+
+  // Progress bars
+  const progWrap = div({display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"20px"});
+  const progBars = ["Full Name","Matric No","Email"].map(lbl=>{
+    const pw = div({}); const bar = div({height:"3px",borderRadius:"2px",background:"var(--br)",marginBottom:"4px",transition:"background .3s"}); const lt = p(lbl,{fontSize:"10px",color:"var(--t3)",fontWeight:"600",letterSpacing:".04em",textAlign:"center"});
+    pw.appendChild(bar); pw.appendChild(lt); progWrap.appendChild(pw); return {bar,lt};
+  });
+  signupPage.appendChild(progWrap);
+
+  const spForm = div({display:"flex",flexDirection:"column",gap:"16px"});
+
+  // Full Name
+  const nameWrap = div({display:"flex",flexDirection:"column",gap:"6px"});
+  const nameLbl = document.createElement("label"); nameLbl.textContent="Full Name *"; Object.assign(nameLbl.style,{fontSize:"13px",fontWeight:"600",color:"var(--t2)",letterSpacing:".04em"});
+  const nameIconWrap = div({position:"relative"});
+  const nameIco = span("👤",{position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"});
+  const nameInp = mkInput("e.g. Chidi Emmanuel Okafor");
+  nameInp.style.paddingLeft="40px";
+  nameIconWrap.appendChild(nameIco); nameIconWrap.appendChild(nameInp);
+  nameWrap.appendChild(nameLbl); nameWrap.appendChild(nameIconWrap);
+  nameWrap.appendChild(p("Enter first and last name as on your university ID",{fontSize:"11px",color:"var(--t3)"}));
+  spForm.appendChild(nameWrap);
+
+  // Matric No
+  const matWrap = div({display:"flex",flexDirection:"column",gap:"6px"});
+  const matLbl = document.createElement("label"); matLbl.textContent="Matriculation Number *"; Object.assign(matLbl.style,{fontSize:"13px",fontWeight:"600",color:"var(--t2)",letterSpacing:".04em"});
+  const matIconWrap = div({position:"relative"});
+  const matIco = span("🎓",{position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"});
+  const matCheck = span("",{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"14px"});
+  const matInp = mkInput("e.g. FT23CMP0042","text",true);
+  matInp.maxLength=13; matInp.style.paddingLeft="40px"; matInp.style.paddingRight="36px";
+  matInp.oninput=()=>{
+    const v=matInp.value.toUpperCase().replace(/[^A-Z0-9]/g,""); matInp.value=v;
+    const ok=MATRIC_RE.test(v);
+    matCheck.textContent=v?(ok?"✅":"❌"):"";
+    matInp.style.borderColor=v?(ok?"var(--ac)":"var(--er)"):"var(--br)";
+    progBars[1].bar.style.background=ok?"var(--ac)":"var(--br)";
+    progBars[1].lt.style.color=ok?"var(--ac)":"var(--t3)";
+    progBars[1].lt.textContent="Matric No"+(ok?" ✓":"");
+  };
+  matIconWrap.appendChild(matIco); matIconWrap.appendChild(matInp); matIconWrap.appendChild(matCheck);
+  matWrap.appendChild(matLbl); matWrap.appendChild(matIconWrap);
+  matWrap.appendChild(p("Format: FT23CMP0001 – FT23CMP0500 · Auto-converts to uppercase",{fontSize:"11px",color:"var(--t3)"}));
+  spForm.appendChild(matWrap);
+
+  nameInp.oninput=()=>{
+    const v=nameInp.value; const ok=v.trim().split(" ").length>=2&&v.trim().length>=4;
+    progBars[0].bar.style.background=ok&&v?"var(--ac)":"var(--br)";
+    progBars[0].lt.style.color=ok&&v?"var(--ac)":"var(--t3)";
+    progBars[0].lt.textContent="Full Name"+(ok&&v?" ✓":"");
+  };
+
+  // Email
+  const emWrap = div({display:"flex",flexDirection:"column",gap:"6px"});
+  const emLbl = document.createElement("label"); emLbl.textContent="University Email Address *"; Object.assign(emLbl.style,{fontSize:"13px",fontWeight:"600",color:"var(--t2)",letterSpacing:".04em"});
+  const emIconWrap = div({position:"relative"});
+  const emIco = span("✉️",{position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"});
+  const emCheck = span("",{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"14px"});
+  const emInp = mkInput("e.g. ft23cmp042@university.edu.ng","email");
+  emInp.style.paddingLeft="40px"; emInp.style.paddingRight="36px";
+  emInp.oninput=()=>{
+    const ok=EMAIL_RE.test(emInp.value);
+    emCheck.textContent=emInp.value?(ok?"✅":"❌"):"";
+    emInp.style.borderColor=emInp.value?(ok?"var(--ac)":"var(--er)"):"var(--br)";
+    progBars[2].bar.style.background=ok?"var(--ac)":"var(--br)";
+    progBars[2].lt.style.color=ok?"var(--ac)":"var(--t3)";
+    progBars[2].lt.textContent="Email"+(ok?" ✓":"");
+  };
+  emIconWrap.appendChild(emIco); emIconWrap.appendChild(emInp); emIconWrap.appendChild(emCheck);
+  emWrap.appendChild(emLbl); emWrap.appendChild(emIconWrap);
+  emWrap.appendChild(p("Use your official university email address",{fontSize:"11px",color:"var(--t3)"}));
+  spForm.appendChild(emWrap);
+
+  // Privacy note
+  const privNote = div({padding:"11px 13px",background:"rgba(0,212,168,.05)",borderRadius:"var(--rs)",border:"1px solid rgba(0,212,168,.12)"});
+  privNote.innerHTML='<p style="font-size:12px;color:var(--t2);line-height:1.65">🔐 Your details are stored securely. Your name and email are <strong style="color:var(--tx)">never</strong> linked to your vote — anonymity enforced at database level.</p>';
+  spForm.appendChild(privNote);
+
+  const spErr = div({display:"none"}); spForm.appendChild(spErr);
+  const spOk  = div({display:"none"}); spForm.appendChild(spOk);
+
+  const spSubmitBtn = Btn("✅  Create My Account","pr",()=>{
+    const nm  = sanitize(nameInp.value.trim());
+    const mat = sanitize(matInp.value.trim().toUpperCase());
+    const em  = sanitize(emInp.value.trim().toLowerCase());
+    spErr.style.display="none"; spOk.style.display="none";
+
+    if(!nm||nm.split(" ").length<2){spErr.innerHTML="";spErr.appendChild(errBox("Please enter your full name (first and last name)."));spErr.style.display="block";return;}
+    if(!MATRIC_RE.test(mat)){spErr.innerHTML="";spErr.appendChild(errBox("Invalid Matric No. Must be between FT23CMP0001 and FT23CMP0500."));spErr.style.display="block";return;}
+    if(!EMAIL_RE.test(em)){spErr.innerHTML="";spErr.appendChild(errBox("Please enter a valid email address."));spErr.style.display="block";return;}
+    if(DB.users[mat]){spErr.innerHTML="";spErr.appendChild(errBox("This Matric No is already registered. Please log in instead."));spErr.style.display="block";return;}
+
+    DB.users[mat]={name:nm,matric:mat,email:em,hasVoted:false};
+    spOk.innerHTML="";spOk.appendChild(okBox(`Welcome, ${nm.split(" ")[0]}! 🎉 Account created. Redirecting to login…`));spOk.style.display="block";
+    spSubmitBtn.disabled=true;
+    setTimeout(()=>{ loginMatInp.value=mat; showPage("login"); },2000);
+  });
+  Object.assign(spSubmitBtn.style,{width:"100%",fontSize:"15px",padding:"14px"});
+  spForm.appendChild(spSubmitBtn);
+
+  const goLoginLink = div({textAlign:"center",marginTop:"4px"});
+  goLoginLink.innerHTML='<p style="font-size:13px;color:var(--t2)">Already registered? <button onclick="window.showPage(\'login\')" style="background:none;border:none;color:var(--ac);cursor:pointer;fontWeight:700;font-size:13px;font-family:var(--fn)">Log in here →</button></p>';
+  spForm.appendChild(goLoginLink);
+  signupPage.appendChild(spForm);
+
+  // ── LOGIN PAGE ────────────────────────────────────────────────────────────
+  const loginPage = div({display:"none"});
+  loginPage.className="card";
+  Object.assign(loginPage.style,{padding:"24px"});
+
+  const backBtnL = btn("← Back",{background:"none",border:"none",color:"var(--t2)",fontSize:"13px",cursor:"pointer",marginBottom:"20px"},()=>showPage("home"));
+  loginPage.appendChild(backBtnL);
+
+  const lpHdr = div({marginBottom:"20px"});
+  lpHdr.appendChild(div({display:"inline-flex",alignItems:"center",justifyContent:"center",width:"42px",height:"42px",borderRadius:"11px",background:"rgba(0,212,168,.1)",border:"1px solid rgba(0,212,168,.2)",fontSize:"20px",marginBottom:"10px"},[span("🔐")]));
+  lpHdr.appendChild(h(2,"Student Login",{fontSize:"19px",fontWeight:"800",marginBottom:"5px"}));
+  lpHdr.appendChild(p("Enter your Matriculation Number to access the ballot.",{color:"var(--t2)",fontSize:"13px",lineHeight:"1.6"}));
+  loginPage.appendChild(lpHdr);
+
+  const lpForm = div({display:"flex",flexDirection:"column",gap:"16px"});
+  const lmWrap = div({display:"flex",flexDirection:"column",gap:"6px"});
+  const lmLbl = document.createElement("label"); lmLbl.textContent="Matriculation Number"; Object.assign(lmLbl.style,{fontSize:"13px",fontWeight:"600",color:"var(--t2)",letterSpacing:".04em"});
+  const lmIconWrap = div({position:"relative"});
+  const lmIco = span("🎓",{position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"});
+  const loginMatInp = mkInput("e.g. FT23CMP0042","text",true);
+  loginMatInp.maxLength=13; loginMatInp.style.paddingLeft="40px"; loginMatInp.style.fontSize="15px";
+  loginMatInp.oninput=()=>loginMatInp.value=loginMatInp.value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+  lmIconWrap.appendChild(lmIco); lmIconWrap.appendChild(loginMatInp);
+  lmWrap.appendChild(lmLbl); lmWrap.appendChild(lmIconWrap);
+  lmWrap.appendChild(p("Format: FT23CMP0001 – FT23CMP0500",{fontSize:"11px",color:"var(--t3)"}));
+  lpForm.appendChild(lmWrap);
+
+  const lpErr = div({display:"none"}); lpForm.appendChild(lpErr);
+
+  const doLogin = () => {
+    const mat=sanitize(loginMatInp.value.trim().toUpperCase());
+    lpErr.style.display="none";
+    if(!mat){lpErr.innerHTML="";lpErr.appendChild(errBox("Please enter your Matriculation Number."));lpErr.style.display="block";return;}
+    if(!MATRIC_RE.test(mat)){lpErr.innerHTML="";lpErr.appendChild(errBox("Invalid format. Must be FT23CMP0001 – FT23CMP0500."));lpErr.style.display="block";return;}
+    if(!DB.users[mat]){lpErr.innerHTML="";lpErr.appendChild(errBox("Matric No not found. Please create an account first."));lpErr.style.display="block";return;}
+    state.student={id:mat,...DB.users[mat]};
+    state.view="voter"; render();
+  };
+  loginMatInp.onkeydown=e=>e.key==="Enter"&&doLogin();
+
+  const lpBtn = Btn("Access Voter Portal →","pr",doLogin);
+  Object.assign(lpBtn.style,{width:"100%",fontSize:"15px",padding:"14px"});
+  lpForm.appendChild(lpBtn);
+
+  const goRegLink = div({textAlign:"center",marginTop:"4px"});
+  goRegLink.innerHTML='<p style="font-size:13px;color:var(--t2)">Don\'t have an account? <button onclick="window.showPage(\'signup\')" style="background:none;border:none;color:var(--ac);cursor:pointer;font-weight:700;font-size:13px;font-family:var(--fn)">Register here →</button></p>';
+  lpForm.appendChild(goRegLink);
+  loginPage.appendChild(lpForm);
+
+  // ── ADMIN PAGE ────────────────────────────────────────────────────────────
+  const adminPage = div({display:"none"});
+  adminPage.className="card";
+  Object.assign(adminPage.style,{padding:"24px"});
+
+  const backBtnA = btn("← Back",{background:"none",border:"none",color:"var(--t2)",fontSize:"13px",cursor:"pointer",marginBottom:"20px"},()=>showPage("home"));
+  adminPage.appendChild(backBtnA);
+
+  const apHdr = div({marginBottom:"20px"});
+  apHdr.appendChild(div({display:"inline-flex",alignItems:"center",justifyContent:"center",width:"42px",height:"42px",borderRadius:"11px",background:"rgba(0,153,255,.1)",border:"1px solid rgba(0,153,255,.2)",fontSize:"20px",marginBottom:"10px"},[span("🛡️")]));
+  const apTitleRow = div({display:"flex",alignItems:"center",gap:"10px",marginBottom:"5px"});
+  apTitleRow.appendChild(h(2,"Admin Access",{fontSize:"19px",fontWeight:"800"}));
+  apTitleRow.appendChild(Tag("Restricted","bl"));
+  apHdr.appendChild(apTitleRow);
+  apHdr.appendChild(p("Restricted to the Course Representative only.",{color:"var(--t2)",fontSize:"13px",lineHeight:"1.6"}));
+  adminPage.appendChild(apHdr);
+
+  const apForm = div({display:"flex",flexDirection:"column",gap:"16px"});
+  const apPwWrap = div({display:"flex",flexDirection:"column",gap:"6px"});
+  const apPwLbl = document.createElement("label"); apPwLbl.textContent="Admin Password"; Object.assign(apPwLbl.style,{fontSize:"13px",fontWeight:"600",color:"var(--t2)",letterSpacing:".04em"});
+  const apPwIconWrap = div({position:"relative"});
+  const apPwIco = span("🔑",{position:"absolute",left:"13px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"});
+  const pwInp = mkInput("Enter admin password","password");
+  pwInp.style.paddingLeft="40px";
+  apPwIconWrap.appendChild(apPwIco); apPwIconWrap.appendChild(pwInp);
+  apPwWrap.appendChild(apPwLbl); apPwWrap.appendChild(apPwIconWrap);
+  apForm.appendChild(apPwWrap);
+
+  const apErr = div({display:"none"}); apForm.appendChild(apErr);
+
+  const doAdmin = () => {
+    apErr.style.display="none";
+    if(!pwInp.value){apErr.innerHTML="";apErr.appendChild(errBox("Please enter the admin password."));apErr.style.display="block";return;}
+    if(pwInp.value!==ADMIN_PW){apErr.innerHTML="";apErr.appendChild(errBox("Incorrect password. Access denied."));apErr.style.display="block";return;}
+    state.view="admin"; render();
+  };
+  pwInp.onkeydown=e=>e.key==="Enter"&&doAdmin();
+
+  const apBtn = Btn("🔓  Enter Dashboard","se",doAdmin);
+  Object.assign(apBtn.style,{width:"100%",fontSize:"15px",padding:"14px"});
+  apForm.appendChild(apBtn);
+  const pwHint = div({marginTop:"4px",textAlign:"center"});
+  pwHint.innerHTML='<p style="font-size:11px;color:var(--t3)">Admin password: <code style="font-family:var(--mo);color:var(--t2)">Madaki123</code></p>';
+  apForm.appendChild(pwHint);
+  adminPage.appendChild(apForm);
+
+  // page switcher
+  const pages={home:homeBtns,signup:signupPage,login:loginPage,admin:adminPage};
+  window.showPage = (name) => { Object.values(pages).forEach(p=>p.style.display="none"); pages[name].style.display="block"; };
+  showPage("home");
+
+  wrap.appendChild(homeBtns);
+  wrap.appendChild(signupPage);
+  wrap.appendChild(loginPage);
+  wrap.appendChild(adminPage);
+  root.appendChild(wrap);
+  return root;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VOTER PORTAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function buildVoter() {
+  const sid = state.student.id;
+  const student = DB.users[sid] || state.student;
+  let pick = null, expand = null;
+
+  const root = div({minHeight:"100vh",background:"var(--bg)"});
+
+  // Header
+  const header = div({background:"rgba(17,24,39,.96)",backdropFilter:"blur(12px)",borderBottom:"1px solid var(--br)",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:"0",zIndex:"100"});
+  const hLeft = div({display:"flex",alignItems:"center",gap:"10px"});
+  hLeft.appendChild(span("🗳️",{fontSize:"20px"}));
+  const hTxt = div({}); hTxt.appendChild(p("VoteSecure",{fontWeight:"700",fontSize:"14px"})); hTxt.appendChild(p("300 LEVEL CMP ONLINE VOTING SYSTEM",{fontSize:"10px",color:"var(--t2)"}));
+  hLeft.appendChild(hTxt);
+  const hRight = div({display:"flex",alignItems:"center",gap:"10px"});
+  const statusRow = div({display:"flex",alignItems:"center",gap:"6px"});
+  const closed = DB.election.status==="closed";
+  statusRow.appendChild(Dot(!closed));
+  statusRow.appendChild(span(closed?"CLOSED":"LIVE",{fontSize:"11px",color:closed?"var(--er)":"var(--ac)",fontWeight:"700",letterSpacing:".04em"}));
+  const userBadge = div({padding:"5px 10px",background:"var(--s1)",borderRadius:"var(--rs)",border:"1px solid var(--br)",fontSize:"11px",color:"var(--t2)",fontFamily:"var(--mo)"},[span("👤 "+sid)]);
+  const logoutBtn = btn("Logout",{background:"none",border:"1px solid var(--br)",color:"var(--t3)",padding:"5px 11px",borderRadius:"var(--rs)",fontSize:"12px"},()=>{state.view="landing";state.student=null;render();});
+  hRight.appendChild(statusRow); hRight.appendChild(userBadge); hRight.appendChild(logoutBtn);
+  header.appendChild(hLeft); header.appendChild(hRight);
+  root.appendChild(header);
+
+  const main = div({maxWidth:"900px",margin:"0 auto",padding:"28px 16px"});
+
+  // Welcome banner
+  const welcomeBanner = div({marginBottom:"20px",padding:"14px 18px",background:"var(--s1)",borderRadius:"var(--rd)",border:"1px solid var(--br)",display:"flex",alignItems:"center",gap:"12px",animation:"up .4s ease"});
+  const avDiv = div({width:"40px",height:"40px",borderRadius:"10px",background:"linear-gradient(135deg,rgba(0,212,168,.2),rgba(0,153,255,.2))",border:"1px solid rgba(0,212,168,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",fontWeight:"700",color:"var(--ac)",fontFamily:"var(--mo)",flexShrink:"0"},[span(initials(student.name||"ST"))]);
+  const wTxt = div({flex:"1"});
+  wTxt.appendChild(p("Welcome back, "+(student.name||"Student").split(" ")[0]+"! 👋",{fontWeight:"700",fontSize:"14px",marginBottom:"2px"}));
+  wTxt.appendChild(p((student.email||"")+" · "+sid,{fontSize:"11px",color:"var(--t2)",fontFamily:"var(--mo)"}));
+  welcomeBanner.appendChild(avDiv); welcomeBanner.appendChild(wTxt);
+  if(student.hasVoted) welcomeBanner.appendChild(Tag("Voted ✓","ac"));
+  main.appendChild(welcomeBanner);
+
+  // Status alerts
+  if(student.hasVoted) {
+    const vBanner = div({background:"rgba(0,212,168,.07)",border:"1px solid rgba(0,212,168,.25)",borderRadius:"var(--rd)",padding:"14px 18px",marginBottom:"20px",display:"flex",gap:"12px",alignItems:"center",animation:"up .4s ease"});
+    vBanner.appendChild(span("✅",{fontSize:"24px"}));
+    const vt = div({}); vt.appendChild(p("Your vote has been recorded!",{fontWeight:"700",color:"var(--ac)",marginBottom:"2px"})); vt.appendChild(p("Your choice is anonymous and permanent.",{fontSize:"13px",color:"var(--t2)"}));
+    vBanner.appendChild(vt); main.appendChild(vBanner);
+  }
+  if(closed&&!student.hasVoted){
+    const cBanner = div({background:"rgba(255,71,87,.07)",border:"1px solid rgba(255,71,87,.25)",borderRadius:"var(--rd)",padding:"14px 18px",marginBottom:"20px"});
+    cBanner.appendChild(p("🔒 Election Closed",{fontWeight:"700",color:"var(--er)",marginBottom:"2px"}));
+    cBanner.appendChild(p("Voting has ended. Results are being processed.",{fontSize:"13px",color:"var(--t2)"}));
+    main.appendChild(cBanner);
+  }
+
+  const titleSection = div({marginBottom:"20px"});
+  titleSection.appendChild(h(2,student.hasVoted?"Election Candidates":"Cast Your Vote",{fontSize:"22px",fontWeight:"800",letterSpacing:"-.02em",marginBottom:"5px"}));
+  titleSection.appendChild(p(student.hasVoted?"You have already voted.":closed?"Voting is now closed.":"Review each candidate carefully. Your vote is anonymous and permanent.",{color:"var(--t2)",fontSize:"13px"}));
+  main.appendChild(titleSection);
+
+  // Candidates grid
+  const grid = div({display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(265px,1fr))",gap:"14px",marginBottom:"28px"});
+  const cardRefs = {};
+
+  DB.candidates.forEach((c,i)=>{
+    const ccard = div({background:"var(--s1)",border:"2px solid var(--br)",borderRadius:"var(--rd)",padding:"18px",cursor:student.hasVoted||closed?"default":"pointer",transition:"all .25s",animation:`up .5s ease ${i*.07}s both`});
+
+    const cavH = div({display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"11px"});
+    const av = div({width:"48px",height:"48px",borderRadius:"12px",background:`${c.color}28`,border:`2px solid ${c.color}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"15px",fontWeight:"800",color:c.color,fontFamily:"var(--mo)"},[span(c.avatar)]);
+    const checkMark = div({width:"24px",height:"24px",borderRadius:"50%",background:"var(--ac)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",display:"none"},[span("✓")]);
+    cavH.appendChild(av); cavH.appendChild(checkMark);
+    ccard.appendChild(cavH);
+    ccard.appendChild(p(c.name,{fontWeight:"700",fontSize:"15px",marginBottom:"3px"}));
+    ccard.appendChild(p(c.position,{fontSize:"11px",color:"var(--ac)",fontWeight:"700",marginBottom:"9px",textTransform:"uppercase",letterSpacing:".05em"}));
+
+    const manifestoEl = p(c.manifesto.slice(0,95)+"…",{fontSize:"13px",color:"var(--t2)",lineHeight:"1.75",marginBottom:"9px"});
+    ccard.appendChild(manifestoEl);
+
+    const readBtn = btn("▼ Read full manifesto",{background:"none",border:"none",color:"var(--ac)",fontSize:"12px",cursor:"pointer",fontWeight:"600"},e=>{
+      e.stopPropagation();
+      if(expand===c.id){expand=null;manifestoEl.textContent=c.manifesto.slice(0,95)+"…";readBtn.textContent="▼ Read full manifesto";}
+      else{expand=c.id;manifestoEl.textContent=c.manifesto;readBtn.textContent="▲ Show less";}
+    });
+    ccard.appendChild(readBtn);
+
+    cardRefs[c.id]={ccard,checkMark};
+
+    if(!student.hasVoted&&!closed){
+      ccard.onclick=()=>{
+        const prev=pick;
+        if(prev&&cardRefs[prev]){cardRefs[prev].ccard.style.border="2px solid var(--br)";cardRefs[prev].ccard.style.transform="none";cardRefs[prev].checkMark.style.display="none";}
+        if(prev===c.id){pick=null;submitBtn.disabled=true;submitHint.textContent="Select a candidate above to continue";}
+        else{pick=c.id;ccard.style.border="2px solid var(--ac)";ccard.style.transform="translateY(-3px)";checkMark.style.display="flex";submitBtn.disabled=false;submitHint.textContent="Selected: "+c.name;}
+      };
+    }
+    grid.appendChild(ccard);
+  });
+  main.appendChild(grid);
+
+  // Submit button
+  const submitWrap = div({display:"flex",flexDirection:"column",alignItems:"center",gap:"8px",animation:"up .6s ease"});
+  const submitBtn = Btn("🗳️  Submit My Vote","pr",()=>{
+    if(!pick) return;
+    const c=DB.candidates.find(x=>x.id===pick);
+    mkModal("Confirm Your Vote",(box,closeModal)=>{
+      box.appendChild(p("You are about to cast your vote for:",{color:"var(--t2)",fontSize:"13px",marginBottom:"14px"}));
+      const cRow = div({background:"var(--s2)",borderRadius:"var(--rs)",padding:"14px",marginBottom:"14px",border:"1px solid var(--br)",display:"flex",alignItems:"center",gap:"12px"});
+      cRow.appendChild(div({width:"42px",height:"42px",borderRadius:"10px",background:`${c.color}28`,border:`2px solid ${c.color}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",fontWeight:"800",color:c.color,fontFamily:"var(--mo)"},[span(c.avatar)]));
+      const cTxt=div({}); cTxt.appendChild(p(c.name,{fontWeight:"700",fontSize:"15px"})); cTxt.appendChild(p(c.position,{fontSize:"12px",color:"var(--t2)"}));
+      cRow.appendChild(cTxt); box.appendChild(cRow);
+      const warn = div({background:"rgba(255,211,42,.07)",border:"1px solid rgba(255,211,42,.2)",borderRadius:"var(--rs)",padding:"10px",marginBottom:"16px"});
+      warn.appendChild(p("⚠️ This is permanent. You may only vote once.",{fontSize:"13px",color:"var(--wn)"}));
+      box.appendChild(warn);
+      const btnRow = div({display:"flex",gap:"10px"});
+      btnRow.appendChild(Btn("Cancel","se",closeModal)); 
+      const confirmBtn = Btn("✅  Confirm Vote","pr",()=>{
+        // Atomic vote recording
+        if(DB.users[sid].hasVoted){closeModal();return;}
+        const rid=mkRcpt();
+        DB.users[sid].hasVoted=true; DB.users[sid].receiptId=rid;
+        DB.candidates.find(x=>x.id===pick).votes++;
+        DB.election.totalVotes++;
+        DB.votes.push({receiptId:rid,candidateId:pick,ts:new Date().toLocaleTimeString()});
+        state.student={...state.student,...DB.users[sid]};
+        closeModal();
+        // Show receipt modal
+        mkModal("🎉 Vote Recorded!",(rb,cr)=>{
+          rb.style.textAlign="center";
+          rb.appendChild(p("✅",{fontSize:"54px",marginBottom:"10px"}));
+          rb.appendChild(h(3,"Your vote has been cast!",{fontSize:"17px",fontWeight:"800",marginBottom:"7px"}));
+          rb.appendChild(p("Your identity is not linked to your choice. Save this receipt ID as proof:",{color:"var(--t2)",fontSize:"13px",marginBottom:"16px",lineHeight:"1.7"}));
+          const rcptBox=div({background:"var(--s2)",borderRadius:"var(--rd)",padding:"18px",marginBottom:"14px",border:"1px solid rgba(0,212,168,.25)"});
+          rcptBox.appendChild(p("Transaction Receipt ID",{fontSize:"11px",color:"var(--t3)",marginBottom:"7px",textTransform:"uppercase",letterSpacing:".1em"}));
+          rcptBox.appendChild(p(rid,{fontSize:"14px",fontFamily:"var(--mo)",color:"var(--ac)",fontWeight:"700",letterSpacing:".08em",wordBreak:"break-all"}));
+          rcptBox.appendChild(p(new Date().toLocaleString(),{fontSize:"11px",color:"var(--t3)",marginTop:"7px"}));
+          rb.appendChild(rcptBox);
+          rb.appendChild(p("This ID proves your vote was counted without revealing who you chose.",{fontSize:"12px",color:"var(--t3)",marginBottom:"16px"}));
+          const closeRcptBtn=Btn("Close","pr",()=>{cr();state.view="voter";render();});
+          Object.assign(closeRcptBtn.style,{width:"100%"});
+          rb.appendChild(closeRcptBtn);
+        });
+      });
+      btnRow.appendChild(confirmBtn);
+      box.appendChild(btnRow);
+    });
+  },!pick);
+  Object.assign(submitBtn.style,{minWidth:"220px",fontSize:"15px",padding:"14px 28px"});
+  const submitHint = p("Select a candidate above to continue",{fontSize:"12px",color:"var(--t3)"});
+
+  if(!student.hasVoted&&!closed){
+    submitWrap.appendChild(submitBtn);
+    submitWrap.appendChild(submitHint);
+    main.appendChild(submitWrap);
+  }
+
+  root.appendChild(main);
+  return root;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════
+function buildAdmin() {
+  let activeTab="overview";
+  const root = div({display:"flex",minHeight:"100vh",background:"var(--bg)"});
+
+  // Sidebar
+  const sidebar = div({width:"230px",background:"var(--s1)",borderRight:"1px solid var(--br)",display:"flex",flexDirection:"column",position:"sticky",top:"0",height:"100vh",flexShrink:"0"});
+  const sbTop = div({padding:"20px 18px",borderBottom:"1px solid var(--br)"});
+  sbTop.appendChild(span("🛡️",{display:"block",fontSize:"22px",marginBottom:"8px"}));
+  sbTop.appendChild(p("Admin Dashboard",{fontWeight:"800",fontSize:"14px"}));
+  sbTop.appendChild(p("Course Rep Panel",{fontSize:"11px",color:"var(--t2)",marginTop:"3px"}));
+  sidebar.appendChild(sbTop);
+
+  const nav = div({padding:"10px",flex:"1"});
+  const tabs=[{id:"overview",lb:"📊 Overview"},{id:"candidates",lb:"👥 Candidates"},{id:"monitoring",lb:"📡 Live Monitor"}];
+  const tabBtns={};
+  tabs.forEach(t=>{
+    const tb=btn(t.lb,{width:"100%",textAlign:"left",background:t.id==="overview"?"rgba(0,212,168,.1)":"transparent",border:t.id==="overview"?"1px solid rgba(0,212,168,.2)":"1px solid transparent",borderRadius:"var(--rs)",padding:"10px 13px",marginBottom:"4px",color:t.id==="overview"?"var(--ac)":"var(--t2)",fontSize:"13px",fontWeight:t.id==="overview"?"600":"400",cursor:"pointer",transition:"all .2s"},()=>{
+      activeTab=t.id; Object.entries(tabBtns).forEach(([id,b])=>{ b.style.background=id===t.id?"rgba(0,212,168,.1)":"transparent"; b.style.borderColor=id===t.id?"rgba(0,212,168,.2)":"transparent"; b.style.color=id===t.id?"var(--ac)":"var(--t2)"; b.style.fontWeight=id===t.id?"600":"400"; }); renderMain();
+    });
+    tabBtns[t.id]=tb; nav.appendChild(tb);
+  });
+  sidebar.appendChild(nav);
+
+  // Toggle + logout
+  const sbBot = div({padding:"14px",borderTop:"1px solid var(--br)"});
+  const toggleBox = div({marginBottom:"10px",padding:"10px 12px",background:`rgba(${DB.election.status==="open"?"0,212,168":"255,71,87"},.1)`,borderRadius:"var(--rs)",border:`1px solid rgba(${DB.election.status==="open"?"0,212,168":"255,71,87"},.2)`});
+  const toggleStatus = div({display:"flex",alignItems:"center",gap:"7px",marginBottom:"8px"});
+  const tDot = Dot(DB.election.status==="open");
+  const tTxt = span(DB.election.status==="open"?"ELECTION OPEN":"ELECTION CLOSED",{fontSize:"12px",fontWeight:"700",color:DB.election.status==="open"?"var(--ac)":"var(--er)"});
+  toggleStatus.appendChild(tDot); toggleStatus.appendChild(tTxt);
+  toggleBox.appendChild(toggleStatus);
+  const toggleBtn = btn(DB.election.status==="open"?"🔒 Close Voting":"🔓 Open Voting",{width:"100%",background:DB.election.status==="open"?"linear-gradient(135deg,#ff4757,#ff6b35)":"linear-gradient(135deg,#00d4a8,#00b894)",color:DB.election.status==="open"?"#fff":"#000",border:"none",borderRadius:"var(--rs)",padding:"8px",fontSize:"12px",fontWeight:"600",cursor:"pointer"},()=>{
+    DB.election.status=DB.election.status==="open"?"closed":"open";
+    toggleBtn.textContent=DB.election.status==="open"?"🔒 Close Voting":"🔓 Open Voting";
+    Object.assign(toggleBtn.style,{background:DB.election.status==="open"?"linear-gradient(135deg,#ff4757,#ff6b35)":"linear-gradient(135deg,#00d4a8,#00b894)",color:DB.election.status==="open"?"#fff":"#000"});
+    tTxt.textContent=DB.election.status==="open"?"ELECTION OPEN":"ELECTION CLOSED";
+    tTxt.style.color=DB.election.status==="open"?"var(--ac)":"var(--er)";
+    renderMain();
+  });
+  toggleBox.appendChild(toggleBtn); sbBot.appendChild(toggleBox);
+  sbBot.appendChild(btn("← Logout",{width:"100%",background:"none",border:"1px solid var(--br)",color:"var(--t3)",padding:"9px",borderRadius:"var(--rs)",fontSize:"12px"},()=>{state.view="landing";render();}));
+  sidebar.appendChild(sbBot);
+
+  // Main area
+  const mainArea = div({flex:"1",padding:"28px 30px",overflowY:"auto"});
+
+  function renderMain(){
+    mainArea.innerHTML="";
+    const tv=DB.election.totalVotes, ts=DB.election.totalStudents, tp=Math.round(tv/ts*100);
+    const isClosed=DB.election.status==="closed";
+    const ranked=[...DB.candidates].sort((a,b)=>b.votes-a.votes);
+    const winner=ranked[0];
+
+    if(activeTab==="overview"){
+      const topRow=div({display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"24px"});
+      const pageTitle=div({});
+      pageTitle.appendChild(h(1,"Election Overview",{fontSize:"22px",fontWeight:"800",letterSpacing:"-.02em",marginBottom:"4px"}));
+      pageTitle.appendChild(p("300 LEVEL CMP · Real-time data",{color:"var(--t2)",fontSize:"13px"}));
+      topRow.appendChild(pageTitle);
+      if(!isClosed){
+        const endBtn=Btn("🏁 End Election","da",()=>{
+          mkModal("🏁 End Election?",(box,close)=>{
+            box.appendChild(p("This will permanently close voting and declare a winner. This cannot be reversed.",{color:"var(--t2)",fontSize:"13px",marginBottom:"14px",lineHeight:"1.7"}));
+            const warnDiv=div({background:"rgba(255,71,87,.07)",border:"1px solid rgba(255,71,87,.2)",borderRadius:"var(--rs)",padding:"10px",marginBottom:"16px"});
+            warnDiv.appendChild(p(`⚠️ ${tv} votes cast · ${tp}% turnout.`,{fontSize:"13px",color:"var(--er)"}));
+            box.appendChild(warnDiv);
+            const br=div({display:"flex",gap:"10px"});
+            br.appendChild(Btn("Cancel","se",close));
+            br.appendChild(Btn("🏁 End & Declare Winner","da",()=>{DB.election.status="closed";close();toggleBtn.textContent="🔓 Open Voting";Object.assign(toggleBtn.style,{background:"linear-gradient(135deg,#00d4a8,#00b894)",color:"#000"});tTxt.textContent="ELECTION CLOSED";tTxt.style.color="var(--er)";renderMain();showResults();}));
+            box.appendChild(br);
+          });
+        });
+        topRow.appendChild(endBtn);
+      } else {
+        topRow.appendChild(Btn("🏆 View Results","pr",showResults));
+      }
+      mainArea.appendChild(topRow);
+
+      // Stat cards
+      const statGrid=div({display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:"12px",marginBottom:"20px"});
+      [{l:"Votes Cast",v:tv,ic:"🗳️",cl:"var(--ac)"},{l:"Total Students",v:ts,ic:"🎓",cl:"var(--bl)"},{l:"Turnout",v:`${tp}%`,ic:"📊",cl:"var(--wn)"},{l:"Candidates",v:DB.candidates.length,ic:"👥",cl:"var(--or)"}].forEach((s,i)=>{
+        const sc=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"16px",textAlign:"center",animation:`up .4s ease ${i*.07}s both`});
+        sc.appendChild(p(s.ic,{fontSize:"24px",marginBottom:"5px"}));
+        sc.appendChild(p(String(s.v),{fontSize:"24px",fontWeight:"800",color:s.cl,fontFamily:"var(--mo)"}));
+        sc.appendChild(p(s.l,{fontSize:"11px",color:"var(--t2)",marginTop:"3px"}));
+        statGrid.appendChild(sc);
+      });
+      mainArea.appendChild(statGrid);
+
+      // Turnout bar
+      const tCard=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"18px",marginBottom:"16px"});
+      const tcTop=div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"});
+      tcTop.appendChild(p("Voter Turnout",{fontWeight:"700",fontSize:"14px"}));
+      tcTop.appendChild(Tag(`${tp}% Participated`,tp>70?"ac":tp>40?"wn":"er"));
+      tCard.appendChild(tcTop);
+      const barTrack=div({width:"100%",height:"12px",background:"var(--s3)",borderRadius:"6px",overflow:"hidden"});
+      const barFill=div({height:"100%",width:`${tp}%`,background:"var(--ac)",borderRadius:"6px",transition:"width 1s ease",boxShadow:"0 0 8px rgba(0,212,168,.4)"});
+      barTrack.appendChild(barFill); tCard.appendChild(barTrack);
+      const tRow=div({display:"flex",justifyContent:"space-between",marginTop:"8px"});
+      tRow.appendChild(p(`✅ ${tv} voted`,{fontSize:"12px",color:"var(--t3)"}));
+      tRow.appendChild(p(`⏳ ${ts-tv} remaining`,{fontSize:"12px",color:"var(--t3)"}));
+      tCard.appendChild(tRow);
+      mainArea.appendChild(tCard);
+
+      // Distribution
+      const dCard=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"18px"});
+      dCard.appendChild(p("Live Vote Distribution",{fontWeight:"700",fontSize:"14px",marginBottom:"5px"}));
+      dCard.appendChild(p(isClosed?"Final results:":"ℹ️ Exact counts hidden until election closes.",{fontSize:"12px",color:"var(--t3)",marginBottom:"16px",fontStyle:"italic"}));
+      ranked.forEach((c,i)=>{
+        const pct=tv>0?Math.round((c.votes/tv)*100):0;
+        const clr=["var(--ac)","var(--bl)","var(--or)","var(--wn)"][i%4];
+        const row=div({marginBottom:"14px"});
+        const rTop=div({display:"flex",justifyContent:"space-between",marginBottom:"6px",alignItems:"center"});
+        const rLeft=div({display:"flex",alignItems:"center",gap:"8px"});
+        const av=div({width:"26px",height:"26px",borderRadius:"6px",background:`${c.color}25`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"9px",fontWeight:"800",color:c.color,fontFamily:"var(--mo)"},[span(c.avatar)]);
+        rLeft.appendChild(av); rLeft.appendChild(p(c.name,{fontWeight:"600",fontSize:"13px"}));
+        rTop.appendChild(rLeft);
+        rTop.appendChild(p(isClosed?`${c.votes} votes`:`${pct}%`,{fontFamily:"var(--mo)",fontSize:"12px",color:clr}));
+        row.appendChild(rTop);
+        const bt=div({width:"100%",height:"9px",background:"var(--s3)",borderRadius:"5px",overflow:"hidden"});
+        const bf=div({height:"100%",width:`${tv>0?Math.round((c.votes/Math.max(tv,1))*100):0}%`,background:clr,borderRadius:"5px",boxShadow:`0 0 6px ${clr}40`});
+        bt.appendChild(bf); row.appendChild(bt); dCard.appendChild(row);
+      });
+      mainArea.appendChild(dCard);
+    }
+
+    if(activeTab==="candidates"){
+      const cTop=div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px"});
+      cTop.appendChild(h(1,"Candidate Management",{fontSize:"22px",fontWeight:"800"}));
+      cTop.appendChild(Btn("+ Add Candidate","pr",()=>{
+        mkModal("Add New Candidate",(box,close)=>{
+          const nf=div({display:"flex",flexDirection:"column",gap:"13px"});
+          const ni=mkInput("e.g. John Emeka Doe"); const nm=div({display:"flex",flexDirection:"column",gap:"5px"}); nm.appendChild(p("Full Name",{fontSize:"13px",fontWeight:"600",color:"var(--t2)"})); nm.appendChild(ni); nf.appendChild(nm);
+          const mnTa=document.createElement("textarea"); mnTa.placeholder="Write the candidate's manifesto…"; mnTa.rows=4; Object.assign(mnTa.style,{width:"100%",background:"var(--s2)",border:"1px solid var(--br)",borderRadius:"var(--rs)",padding:"11px 13px",color:"var(--tx)",fontSize:"13px",outline:"none",resize:"vertical",fontFamily:"var(--fn)"}); mnTa.onfocus=()=>mnTa.style.borderColor="var(--ac)"; mnTa.onblur=()=>mnTa.style.borderColor="var(--br)";
+          const mnWrap=div({display:"flex",flexDirection:"column",gap:"5px"}); mnWrap.appendChild(p("Manifesto",{fontSize:"13px",fontWeight:"600",color:"var(--t2)"})); mnWrap.appendChild(mnTa); nf.appendChild(mnWrap);
+          const br=div({display:"flex",gap:"10px"});
+          br.appendChild(Btn("Cancel","se",close));
+          br.appendChild(Btn("Add Candidate","pr",()=>{
+            if(!ni.value.trim())return;
+            DB.candidates.push({id:"c"+Date.now(),name:sanitize(ni.value.trim()),position:"Course Representative",manifesto:sanitize(mnTa.value.trim())||"Manifesto to be added.",avatar:initials(ni.value),color:COLORS[DB.candidates.length%COLORS.length],votes:0});
+            close(); renderMain();
+          }));
+          nf.appendChild(br); box.appendChild(nf);
+        });
+      }));
+      mainArea.appendChild(cTop);
+
+      DB.candidates.forEach((c,i)=>{
+        const cc=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"16px",marginBottom:"12px",animation:`up .4s ease ${i*.07}s both`});
+        const cRow=div({display:"flex",alignItems:"flex-start",gap:"12px"});
+        cRow.appendChild(div({width:"46px",height:"46px",borderRadius:"11px",background:`${c.color}25`,border:`2px solid ${c.color}45`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"13px",fontWeight:"800",color:c.color,flexShrink:"0",fontFamily:"var(--mo)"},[span(c.avatar)]));
+        const ct=div({flex:"1"});
+        const ctTop=div({display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px"});
+        const ctLeft=div({}); ctLeft.appendChild(p(c.name,{fontWeight:"700",fontSize:"15px",marginBottom:"2px"})); ctLeft.appendChild(p(c.position,{fontSize:"11px",color:"var(--ac)",fontWeight:"600",letterSpacing:".04em"}));
+        const ctRight=div({display:"flex",gap:"7px"});
+        ctRight.appendChild(btn("✏️ Edit",{background:"rgba(0,153,255,.08)",border:"1px solid rgba(0,153,255,.2)",color:"var(--bl)",padding:"5px 11px",borderRadius:"var(--rs)",fontSize:"12px",cursor:"pointer"},()=>{
+          mkModal("Edit Candidate",(box,close)=>{
+            const ef=div({display:"flex",flexDirection:"column",gap:"13px"});
+            const ei=mkInput(c.name); ei.value=c.name; const em2=div({display:"flex",flexDirection:"column",gap:"5px"}); em2.appendChild(p("Full Name",{fontSize:"13px",fontWeight:"600",color:"var(--t2)"})); em2.appendChild(ei); ef.appendChild(em2);
+            const eta=document.createElement("textarea"); eta.rows=4; eta.value=c.manifesto; Object.assign(eta.style,{width:"100%",background:"var(--s2)",border:"1px solid var(--br)",borderRadius:"var(--rs)",padding:"11px 13px",color:"var(--tx)",fontSize:"13px",outline:"none",resize:"vertical",fontFamily:"var(--fn)"}); eta.onfocus=()=>eta.style.borderColor="var(--ac)"; eta.onblur=()=>eta.style.borderColor="var(--br)";
+            const etw=div({display:"flex",flexDirection:"column",gap:"5px"}); etw.appendChild(p("Manifesto",{fontSize:"13px",fontWeight:"600",color:"var(--t2)"})); etw.appendChild(eta); ef.appendChild(etw);
+            const br=div({display:"flex",gap:"10px"});
+            br.appendChild(Btn("Cancel","se",close));
+            br.appendChild(Btn("Save Changes","pr",()=>{c.name=sanitize(ei.value.trim()||c.name);c.manifesto=sanitize(eta.value.trim()||c.manifesto);c.avatar=initials(c.name);close();renderMain();}));
+            ef.appendChild(br); box.appendChild(ef);
+          });
+        }));
+        ctRight.appendChild(btn("🗑️ Remove",{background:"rgba(255,71,87,.08)",border:"1px solid rgba(255,71,87,.2)",color:"var(--er)",padding:"5px 11px",borderRadius:"var(--rs)",fontSize:"12px",cursor:"pointer"},()=>{DB.candidates.splice(DB.candidates.indexOf(c),1);renderMain();}));
+        ctTop.appendChild(ctLeft); ctTop.appendChild(ctRight); ct.appendChild(ctTop);
+        ct.appendChild(p(c.manifesto,{fontSize:"13px",color:"var(--t2)",marginTop:"8px",lineHeight:"1.75"}));
+        cRow.appendChild(ct); cc.appendChild(cRow); mainArea.appendChild(cc);
+      });
+      if(!DB.candidates.length) mainArea.appendChild(p("No candidates yet. Add one above.",{color:"var(--t3)",fontSize:"14px"}));
+    }
+
+    if(activeTab==="monitoring"){
+      mainArea.appendChild(h(1,"Live Monitoring",{fontSize:"22px",fontWeight:"800",marginBottom:"4px"}));
+      mainArea.appendChild(p("Real-time data · Student identities never shown.",{color:"var(--t2)",fontSize:"13px",marginBottom:"20px"}));
+      const mg=div({display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"16px"});
+      const vc=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"16px",animation:"gp 3s ease infinite"});
+      vc.appendChild(p("VOTES CAST",{fontSize:"11px",color:"var(--t3)",marginBottom:"6px",letterSpacing:".06em"}));
+      vc.appendChild(p(String(tv),{fontSize:"40px",fontWeight:"800",fontFamily:"var(--mo)",color:"var(--ac)"}));
+      vc.appendChild(p(`of ${ts} students`,{fontSize:"12px",color:"var(--t2)",marginTop:"3px"}));
+      const tc=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"16px"});
+      tc.appendChild(p("TURNOUT RATE",{fontSize:"11px",color:"var(--t3)",marginBottom:"6px",letterSpacing:".06em"}));
+      tc.appendChild(p(`${tp}%`,{fontSize:"40px",fontWeight:"800",fontFamily:"var(--mo)",color:"var(--wn)"}));
+      tc.appendChild(p("participation rate",{fontSize:"12px",color:"var(--t2)",marginTop:"3px"}));
+      mg.appendChild(vc); mg.appendChild(tc); mainArea.appendChild(mg);
+
+      const gCard=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"18px",marginBottom:"14px"});
+      const gcTop=div({display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px"});
+      gcTop.appendChild(p("Participation Gauge",{fontWeight:"700",fontSize:"14px"}));
+      const gcStatus=div({display:"flex",alignItems:"center",gap:"7px"},[Dot(DB.election.status==="open"),span(DB.election.status==="open"?"Accepting Votes":"Closed",{fontSize:"12px",color:DB.election.status==="open"?"var(--ac)":"var(--er)",fontWeight:"600"})]);
+      gcTop.appendChild(gcStatus); gCard.appendChild(gcTop);
+      const gt=div({width:"100%",height:"16px",background:"var(--s3)",borderRadius:"8px",overflow:"hidden"});
+      gt.appendChild(div({height:"100%",width:`${tp}%`,background:"var(--ac)",borderRadius:"8px",boxShadow:"0 0 8px rgba(0,212,168,.4)"}));
+      gCard.appendChild(gt);
+      const gRow=div({display:"flex",justifyContent:"space-between",marginTop:"8px"});
+      gRow.appendChild(p(`✅ ${tv} voted`,{fontSize:"12px",color:"var(--t2)"}));
+      gRow.appendChild(p(`⏳ ${ts-tv} pending`,{fontSize:"12px",color:"var(--t2)"}));
+      gCard.appendChild(gRow); mainArea.appendChild(gCard);
+
+      const vCard=div({background:"var(--s1)",border:"1px solid var(--br)",borderRadius:"var(--rd)",padding:"18px"});
+      vCard.appendChild(p("Anonymous Vote Log · receipt IDs only",{fontWeight:"700",fontSize:"14px",marginBottom:"14px"}));
+      if(!DB.votes.length){vCard.appendChild(p("No votes yet.",{color:"var(--t3)",fontSize:"13px"}));}
+      else{DB.votes.slice().reverse().forEach(v=>{const vr=div({display:"flex",justifyContent:"space-between",alignItems:"center",background:"var(--s2)",borderRadius:"var(--rs)",padding:"9px 13px",border:"1px solid var(--br)",marginBottom:"7px",animation:"si .3s ease"});vr.appendChild(div({display:"flex",alignItems:"center",gap:"8px"},[div({width:"6px",height:"6px",borderRadius:"50%",background:"var(--ac)",flexShrink:"0"}),span(v.receiptId,{fontFamily:"var(--mo)",fontSize:"12px",color:"var(--t2)"})]));vr.appendChild(span(v.ts||"",{fontSize:"11px",color:"var(--t3)"}));vCard.appendChild(vr);});}
+      mainArea.appendChild(vCard);
+    }
+  }
+
+  function showResults(){
+    const tv=DB.election.totalVotes,ts=DB.election.totalStudents,tp=Math.round(tv/ts*100);
+    const ranked=[...DB.candidates].sort((a,b)=>b.votes-a.votes);
+    const winner=ranked[0];
+    mkModal("🏆 Election Results",(box)=>{
+      if(winner){
+        const wSection=div({textAlign:"center",marginBottom:"18px"});
+        wSection.appendChild(p("🏆",{fontSize:"48px",marginBottom:"8px"}));
+        wSection.appendChild(p("WINNER DECLARED",{fontSize:"10px",color:"var(--t3)",textTransform:"uppercase",letterSpacing:".1em",marginBottom:"5px"}));
+        const wAv=div({width:"60px",height:"60px",borderRadius:"15px",background:`${winner.color}25`,border:`2px solid ${winner.color}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",fontWeight:"800",color:winner.color,fontFamily:"var(--mo)",margin:"0 auto 8px"},[span(winner.avatar)]);
+        wSection.appendChild(wAv);
+        wSection.appendChild(h(2,winner.name,{fontSize:"20px",fontWeight:"800",marginBottom:"3px"}));
+        wSection.appendChild(p(winner.position,{color:"var(--ac)",fontWeight:"600",fontSize:"13px"}));
+        wSection.appendChild(p(`${winner.votes} votes · ${tv>0?Math.round(winner.votes/tv*100):0}% of ballots`,{color:"var(--t2)",fontSize:"13px",marginTop:"4px"}));
+        box.appendChild(wSection);
+      }
+      ranked.forEach((c,i)=>{
+        const rr=div({marginBottom:"12px"});
+        const rt=div({display:"flex",justifyContent:"space-between",marginBottom:"5px",alignItems:"center"});
+        rt.appendChild(div({display:"flex",alignItems:"center",gap:"6px"},[span(["🥇","🥈","🥉"][i]||"",{fontSize:"13px"}),p(c.name,{fontWeight:"600",fontSize:"13px"})]));
+        rt.appendChild(p(`${c.votes} votes`,{fontFamily:"var(--mo)",fontSize:"12px",fontWeight:"700"}));
+        rr.appendChild(rt);
+        const bt=div({width:"100%",height:"8px",background:"var(--s3)",borderRadius:"4px",overflow:"hidden"});
+        bt.appendChild(div({height:"100%",width:`${tv>0?Math.round((c.votes/Math.max(tv,1))*100):0}%`,background:i===0?"var(--ac)":"var(--t3)",borderRadius:"4px"}));
+        rr.appendChild(bt); box.appendChild(rr);
+      });
+      const stats=div({background:"var(--s2)",borderRadius:"var(--rs)",padding:"11px",marginBottom:"14px"});
+      stats.appendChild(p(`Votes: ${tv} · Turnout: ${tp}% · Students: ${ts}`,{fontSize:"11px",color:"var(--t3)",fontFamily:"var(--mo)"}));
+      box.appendChild(stats);
+      const dlBtn=Btn("📄 Download Results Report","pr",()=>{
+        const r=`300 LEVEL CMP ONLINE VOTING SYSTEM\nELECTION RESULTS REPORT\n${"=".repeat(50)}\n\nWINNER: ${winner?.name} (${winner?.votes} votes)\n\nFULL RESULTS:\n${ranked.map((c,i)=>`${i+1}. ${c.name}: ${c.votes} votes (${tv>0?Math.round(c.votes/tv*100):0}%)`).join("\n")}\n\nTurnout: ${tv}/${ts} (${tp}%)\nGenerated: ${new Date().toLocaleString()}`;
+        const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(new Blob([r],{type:"text/plain"})),download:"cmp300-results.txt"});a.click();
+      });
+      Object.assign(dlBtn.style,{width:"100%"}); box.appendChild(dlBtn);
+    });
+  }
+
+  renderMain();
+  root.appendChild(sidebar);
+  root.appendChild(mainArea);
+  return root;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROUTER
+// ═══════════════════════════════════════════════════════════════════════════════
+function buildApp(){
+  let view;
+  if(state.view==="landing") view=buildLanding();
+  else if(state.view==="voter") view=buildVoter();
+  else if(state.view==="admin") view=buildAdmin();
+  document.getElementById("app").appendChild(view);
+}
+
+buildApp();
+</script>
+</body>
+</html>

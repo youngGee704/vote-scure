@@ -1,0 +1,261 @@
+/**
+ * styles.css — VoteSecure CMP 300
+ * ─────────────────────────────────────────────────────────────────────────────
+ * All visual styles for the VoteSecure application.
+ * Uses CSS custom properties (variables) for a consistent dark-mode theme.
+ *
+ * Palette overview:
+ *   --bg   Background (darkest)
+ *   --s1   Surface level 1 (cards)
+ *   --s2   Surface level 2 (inputs, inner cards)
+ *   --s3   Surface level 3 (progress track, bar track)
+ *   --br   Border colour
+ *   --ac   Accent (teal) — primary brand colour
+ *   --bl   Blue — secondary accent, used for admin elements
+ *   --or   Orange — tertiary accent
+ *   --tx   Primary text
+ *   --t2   Secondary text
+ *   --t3   Muted/hint text
+ *   --er   Error (red)
+ *   --wn   Warning (yellow)
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── RESET ─────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── DESIGN TOKENS ─────────────────────────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg: #0a0f1a;
+  --s1: #111827;
+  --s2: #1a2235;
+  --s3: #232f42;
+
+  /* Borders */
+  --br: #2a3a52;
+
+  /* Accent colours */
+  --ac: #00d4a8;   /* Teal — primary accent */
+  --bl: #0099ff;   /* Blue — admin/secondary */
+  --or: #ff6b35;   /* Orange — tertiary */
+
+  /* Text */
+  --tx: #e8edf5;   /* Primary text */
+  --t2: #8a9bb5;   /* Secondary text */
+  --t3: #5a6b82;   /* Muted / hint text */
+
+  /* Status */
+  --er: #ff4757;   /* Error / danger */
+  --wn: #ffd32a;   /* Warning */
+
+  /* Typography */
+  --fn: 'Sora', sans-serif;
+  --mo: 'JetBrains Mono', monospace;
+
+  /* Geometry */
+  --rd: 14px;      /* Card border-radius */
+  --rs: 8px;       /* Small border-radius */
+
+  /* Shadows */
+  --sh: 0 4px 20px rgba(0, 0, 0, 0.4);   /* Card shadow */
+  --sl: 0 8px 40px rgba(0, 0, 0, 0.6);   /* Modal shadow */
+  --gl: 0 0 20px rgba(0, 212, 168, 0.15); /* Teal glow */
+}
+
+/* ── BASE ───────────────────────────────────────────────────────────────────── */
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--fn);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── SCROLLBAR ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--s1);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--br);
+  border-radius: 3px;
+}
+
+/* ── ANIMATIONS ─────────────────────────────────────────────────────────────── */
+
+/** Slide up + fade in (used for page/card entrance) */
+@keyframes up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/** Fade in (used for modals, error/success boxes) */
+@keyframes fi {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/** Pulse (used for the live status dot) */
+@keyframes pu {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/** Spin (available for loading spinners) */
+@keyframes sp {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/** Glow pulse (used on the vote-count card in monitoring tab) */
+@keyframes gp {
+  0%, 100% { box-shadow: var(--gl); }
+  50%       { box-shadow: 0 0 36px rgba(0, 212, 168, 0.3); }
+}
+
+/** Slide in from left (used for vote log entries) */
+@keyframes si {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── BASE COMPONENTS ────────────────────────────────────────────────────────── */
+
+/** Generic card container */
+.card {
+  background: var(--s1);
+  border: 1px solid var(--br);
+  border-radius: var(--rd);
+  box-shadow: var(--sh);
+}
+
+/** Reset button & input defaults to use app font */
+button {
+  cursor: pointer;
+  font-family: var(--fn);
+}
+input,
+textarea {
+  font-family: var(--fn);
+}
+
+/* ── BUTTON VARIANTS (applied via JS inline styles) ─────────────────────────── */
+/*
+  Primary (pr):   teal-to-blue gradient, dark text
+  Secondary (se): transparent with border
+  Danger (da):    red-to-orange gradient
+  Success (su):   teal-to-green gradient
+
+  All buttons get:
+    padding: 12px 22px
+    border-radius: var(--rs)
+    font-weight: 600
+    transition: all .2s
+    hover: translateY(-1px)
+*/
+
+/* ── INPUT STYLES (applied via JS mkInput helper) ───────────────────────────── */
+/*
+  Standard input:
+    background: var(--s2)
+    border: 1px solid var(--br)
+    border-radius: var(--rs)
+    padding: 12px 14px
+    color: var(--tx)
+    font-size: 14px
+    outline: none
+    transition: border-color .2s
+
+  Focus state:
+    border-color: var(--ac)
+
+  Blur state:
+    border-color: var(--br)
+
+  Monospace variant (for matric number inputs):
+    font-family: var(--mo)
+    letter-spacing: .06em
+*/
+
+/* ── STATUS BADGE COLOURS (used in Tag component) ───────────────────────────── */
+/*
+  ac (teal):
+    background: rgba(0,212,168,.1)
+    color: #00d4a8
+    border: rgba(0,212,168,.25)
+
+  bl (blue):
+    background: rgba(0,153,255,.1)
+    color: #0099ff
+    border: rgba(0,153,255,.25)
+
+  er (red):
+    background: rgba(255,71,87,.1)
+    color: #ff4757
+    border: rgba(255,71,87,.25)
+
+  wn (yellow):
+    background: rgba(255,211,42,.1)
+    color: #ffd32a
+    border: rgba(255,211,42,.25)
+*/
+
+/* ── ERROR / SUCCESS BOXES ──────────────────────────────────────────────────── */
+/*
+  errBox:
+    background: rgba(255,71,87,.08)
+    border: 1px solid rgba(255,71,87,.2)
+    color: var(--er)
+    animation: fi .2s ease
+
+  okBox:
+    background: rgba(0,212,168,.08)
+    border: 1px solid rgba(0,212,168,.2)
+    color: var(--ac)
+    animation: fi .2s ease
+*/
+
+/* ── LAYOUT ─────────────────────────────────────────────────────────────────── */
+
+/* Landing page — centred column */
+/* .landing-root: min-height:100vh, flex, center, radial bg gradients */
+
+/* Voter portal header — sticky top bar */
+/* .voter-header: sticky top:0, z-index:100, blur backdrop */
+
+/* Admin dashboard — sidebar + main area flex row */
+/* .admin-sidebar: width:230px, sticky, height:100vh */
+/* .admin-main: flex:1, overflow-y:auto */
+
+/* Candidate grid */
+/* .candidates-grid: CSS Grid, auto-fill, min 265px per column, 14px gap */
+
+/* ── MODAL OVERLAY ───────────────────────────────────────────────────────────── */
+/*
+  Overlay:
+    position: fixed
+    inset: 0
+    z-index: 1000
+    background: rgba(0,0,0,.72)
+    backdrop-filter: blur(10px)
+    animation: fi .2s ease
+
+  Modal box:
+    max-width: 520px
+    max-height: 90vh
+    overflow-y: auto
+    animation: up .3s ease
+    box-shadow: var(--sl)
+*/
